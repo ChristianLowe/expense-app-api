@@ -1,0 +1,157 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  expense-app
+  Track your expenses with this API
+
+Parameters:
+  Stage:
+    Type: String
+    Description: Stage name to deploy resources to
+    AllowedValues:
+      - dev
+      - prod
+  Domain:
+    Type: String
+    Description: Domain to map to expense-app (e.g. "example.com")
+  HostedZoneId:
+    Type: String
+    Description: Route 53 hosted zone ID
+
+Globals:
+  Function:
+    Runtime: java11
+    Timeout: 10
+    MemorySize: 512
+    AutoPublishAlias: !Ref Stage
+    Tracing: Active
+    Architectures:
+      - arm64
+    Environment:
+      Variables:
+        USERS_TABLE_NAME: !Ref UsersTable
+  Api:
+    Cors:
+      AllowMethods: "'GET,POST,OPTIONS'"
+      AllowHeaders: "'content-type'"
+      AllowOrigin: "'*'"
+      AllowCredentials: "'*'"
+
+Resources:
+  WebCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Sub '${Stage}.${Domain}'
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Ref Domain
+          HostedZoneId: !Ref HostedZoneId
+
+  UsersApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub "users-api-${Stage}"
+      StageName: !Ref Stage
+      Variables:
+        LAMBDA_ALIAS: !Ref Stage
+      TracingEnabled: true
+      Domain:
+        DomainName: !Sub '${Stage}.${Domain}'
+        CertificateArn: !Ref WebCertificate
+        EndpointConfiguration: REGIONAL
+        Route53:
+          HostedZoneId: !Ref HostedZoneId
+
+  UsersTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      PrimaryKey:
+        Name: user-id
+        Type: String
+
+  LambdaLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      ContentUri: lambda-layer
+      CompatibleRuntimes:
+        - java11
+    Metadata:
+      BuildMethod: java11
+
+  ExpensesGetFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      CodeUri: expenses-api
+      Handler: io.chrislowe.expense.handler.ExpensesGetHandler::handleRequest
+      Layers:
+        - !Ref LambdaLayer
+      Events:
+        ExpensesGet:
+          Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
+          Properties:
+            Path: /users/{user_id}/expenses
+            Method: get
+            RestApiId: !Ref UsersApi
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UsersTable
+
+  ExpensesPutFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      CodeUri: expenses-api
+      Handler: io.chrislowe.expense.handler.ExpensesPutHandler::handleRequest
+      Layers:
+        - !Ref LambdaLayer
+      Events:
+        ExpensesPut:
+          Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
+          Properties:
+            Path: /users/{user_id}/expenses
+            Method: put
+            RestApiId: !Ref UsersApi
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UsersTable
+
+#  DomainName:
+#    Type: AWS::ApiGateway::DomainName
+#    Properties:
+#      RegionalCertificateArn: "arn:aws:acm:u${Region}:XXXXXXXX:certificate/XXXXXXXX"
+#      DomainName: !Sub "${Stage}.${Domain}"
+#      SecurityPolicy: TLS_1_2
+#      EndpointConfiguration:
+#        Types:
+#          - REGIONAL
+
+#  LambdaDNS:
+#    Type: AWS::Route53::RecordSetGroup
+#    Properties:
+#      HostedZoneName:
+#        Ref: chrislowe.io.
+#      RecordSets:
+#        - Name:
+#            Fn::Sub: stage.example.com.
+#          Type: A
+#          AliasTarget:
+#            HostedZoneId: Z1UJRXOUMOOFQ8
+#            DNSName:
+#              Fn::GetAtt:
+#                - DomainName
+#                - RegionalDomainName
+#  UrlMapping:
+#    Type: AWS::ApiGateway::BasePathMapping
+#    DependsOn:
+#      - PublicApi
+#      - PublicApiStage
+#    Properties:
+#      DomainName:
+#        Ref: DomainName
+#      RestApiId:
+#        Ref: PublicApi
+#      Stage: ApiStage
+
+Outputs:
+  UsersApiEndpoint:
+    Description: "API Gateway for the Users Api"
+    Value: !Sub "https://${UsersApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}/users/"
