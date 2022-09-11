@@ -32,7 +32,7 @@ Globals:
         USERS_TABLE_NAME: !Ref UsersTable
   Api:
     Cors:
-      AllowMethods: "'GET,POST,OPTIONS'"
+      AllowMethods: "'GET,PUT,POST,OPTIONS'"
       AllowHeaders: "'content-type'"
       AllowOrigin: "'*'"
       AllowCredentials: "'*'"
