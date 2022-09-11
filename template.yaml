@@ -11,12 +11,6 @@ Parameters:
     AllowedValues:
       - dev
       - prod
-  Domain:
-    Type: String
-    Description: Domain to map to expense-app (e.g. "example.com")
-  HostedZoneId:
-    Type: String
-    Description: Route 53 hosted zone ID
 
 Globals:
   Function:
@@ -32,20 +26,12 @@ Globals:
         USERS_TABLE_NAME: !Ref UsersTable
   Api:
     Cors:
-      AllowMethods: "'GET,POST,OPTIONS'"
+      AllowMethods: "'GET, PUT, POST, OPTIONS'"
       AllowHeaders: "'content-type'"
       AllowOrigin: "'*'"
       AllowCredentials: "'*'"
 
 Resources:
-  WebCertificate:
-    Type: AWS::CertificateManager::Certificate
-    Properties:
-      DomainName: !Sub '${Stage}.${Domain}'
-      ValidationMethod: DNS
-      DomainValidationOptions:
-        - DomainName: !Ref Domain
-          HostedZoneId: !Ref HostedZoneId
 
   UsersApi:
     Type: AWS::Serverless::Api
@@ -55,12 +41,6 @@ Resources:
       Variables:
         LAMBDA_ALIAS: !Ref Stage
       TracingEnabled: true
-      Domain:
-        DomainName: !Sub '${Stage}.${Domain}'
-        CertificateArn: !Ref WebCertificate
-        EndpointConfiguration: REGIONAL
-        Route53:
-          HostedZoneId: !Ref HostedZoneId
 
   UsersTable:
     Type: AWS::Serverless::SimpleTable
